@@ -1,13 +1,15 @@
-ARG PHP_VERSION="7.4.8"
-ARG NGINX_VERSION="1.18.0"
-ARG COMPOSER_VERSION="1.10.9"
+ARG PHP_VERSION=7.4.8
+ARG NGINX_VERSION=1.18.0
+ARG COMPOSER_VERSION=1.10.9
 
 # ------------------------------------------------------ FPM -----------------------------------------------------------
 
 FROM php:${PHP_VERSION}-fpm-alpine AS php-fpm-base
 
-RUN docker-php-ext-install opcache && \
-    docker-php-source delete
+RUN apk add --no-cache libpq postgresql-dev && \
+    docker-php-ext-install opcache pdo_pgsql && \
+    docker-php-source delete && \
+    apk --purge del postgresql-dev
 RUN curl -sS https://getcomposer.org/installer | php && \
     mv composer.phar /usr/local/bin/composer
 RUN mkdir /var/www/app && \
@@ -15,7 +17,7 @@ RUN mkdir /var/www/app && \
 USER www-data
 RUN composer global require hirak/prestissimo
 USER root
-COPY .docker/php-fpm/www.conf /usr/local/etc/php/conf.d/www.conf
+COPY .docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/docker.conf
 WORKDIR /var/www/app
 EXPOSE 9000
 
@@ -27,6 +29,7 @@ ENV APP_DEBUG 0
 USER www-data
 COPY --chown=www-data:www-data composer.json composer.lock symfony.lock .env ./
 RUN composer install --no-dev --no-ansi --no-interaction --no-progress --no-suggest --no-scripts --optimize-autoloader
+COPY --chown=www-data:www-data migrations ./migrations
 COPY --chown=www-data:www-data public ./public
 COPY --chown=www-data:www-data bin/console ./bin/console
 COPY --chown=www-data:www-data config ./config
@@ -37,6 +40,8 @@ USER root
 # ----------------------------------------------------- NGINX ----------------------------------------------------------
 
 FROM nginx:${NGINX_VERSION}-alpine AS nginx-base
+
+ENV NGINX_ENTRYPOINT_QUIET_LOGS 1
 
 COPY .docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

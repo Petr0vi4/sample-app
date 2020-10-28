@@ -6,18 +6,17 @@ ARG COMPOSER_VERSION=1.10.9
 
 FROM php:${PHP_VERSION}-fpm-alpine AS php-fpm-base
 
-RUN apk add --no-cache libpq postgresql-dev && \
+RUN apk add --no-cache libpq postgresql-dev $PHPIZE_DEPS && \
     docker-php-ext-install opcache pdo_pgsql && \
+    pecl install apcu &&\
+    docker-php-ext-enable apcu && \
     docker-php-source delete && \
-    apk --purge del postgresql-dev
-RUN curl -sS https://getcomposer.org/installer | php && \
-    mv composer.phar /usr/local/bin/composer
+    apk --purge del postgresql-dev $PHPIZE_DEPS
+RUN curl -sS https://raw.githubusercontent.com/composer/getcomposer.org/7bfcc5eaf3af1fe20e172a8676d2fb9bb8162d7e/web/installer \
+    | php -- --install-dir=/usr/local/bin/ --filename=composer
 RUN mkdir /var/www/app && \
     chown www-data:www-data /var/www/app
-USER www-data
-RUN composer global require hirak/prestissimo
-USER root
-COPY .docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/docker.conf
+COPY .docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/zz-www.conf
 WORKDIR /var/www/app
 EXPOSE 9000
 
@@ -28,7 +27,7 @@ ENV APP_DEBUG 0
 
 USER www-data
 COPY --chown=www-data:www-data composer.json composer.lock symfony.lock .env ./
-RUN composer install --no-dev --no-ansi --no-interaction --no-progress --no-suggest --no-scripts --optimize-autoloader
+RUN composer install --no-dev --no-ansi --no-interaction --no-progress --no-scripts --optimize-autoloader
 COPY --chown=www-data:www-data migrations ./migrations
 COPY --chown=www-data:www-data public ./public
 COPY --chown=www-data:www-data bin/console ./bin/console
